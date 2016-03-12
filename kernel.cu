@@ -7,7 +7,7 @@
 #include "kernel.h"
 //#include <cuda_runtime_api.h>
 //#include <cuda.h>
-#define TPB  32
+#define TPB 32
 //#define TPB 4 
 
 
@@ -464,7 +464,7 @@ void godunov_parallel_global_memory(Shallow2 *q, const float* const x, const flo
 
 //shared memory for only input array
 __global__
-void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallow2* wave1, Shallow2* wave2, float* s1, float* s2, float dt, float dx, bool efix) // q should include ghost cells
+void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
 {
     const int i = threadIdx.x + blockDim.x*blockIdx.x;
     /*
@@ -507,7 +507,17 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
 
     //const int s_i = threadIdx.x+1;//shared index
     const int s_i = threadIdx.x;//shared index
-    extern __shared__ Shallow2 s_q[];//q on shared memory
+    extern __shared__ Shallow2 s_q[];//shared memory
+    //extern __shared__ Shallow2 s_block[];//shared memory
+    //Shallow2* s_q = s_block;//q on shared memory
+    //Shallow2* amdq = &s_block[blockDim.x+1];//amdq on shared memory 
+    //Shallow2* apdq = &s_block[blockDim.x+1+blockDim.x];//apdq on shared memory 
+    //Shallow2* amdq = &s_block[4*blockDim.x+1];//amdq on shared memory 
+    //Shallow2* apdq = &s_block[8*blockDim.x+1+blockDim.x];//apdq on shared memory 
+    Shallow2 wave1;
+    Shallow2 wave2;
+    float s1;
+    float s2;
     //load regular cells
     s_q[s_i] = q[i];
     //load halo cells
@@ -535,13 +545,13 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     float a2 = 0.5*(-(ubar-cbar)*dq1+dq2)/cbar;
 
     //compute the waves
-    wave1[i].h = a1;
-    wave1[i].hu = a1*(ubar - cbar);
-    s1[i] = ubar - cbar;
+    wave1.h = a1;
+    wave1.hu = a1*(ubar - cbar);
+    s1 = ubar - cbar;
 
-    wave2[i].h = a2;
-    wave2[i].hu = a2*(ubar + cbar);
-    s2[i] = ubar + cbar;
+    wave2.h = a2;
+    wave2.hu = a2*(ubar + cbar);
+    s2 = ubar + cbar;
     if (efix)// entropy fix
     {
     //compute flux differences amdq and apdq.
@@ -551,58 +561,58 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     //todo: print CFL number
         float s1_l = s_q[s_i].hu/s_q[s_i].h - sqrt(GRAVITY*s_q[s_i].h);//slope of 1-character, u-c, to the left of 1-wave
         //1.
-        if ((s1_l >= 0.f) && (s1[i] > 0.f))//Fully supersonic case. Everything is right-going
+        if ((s1_l >= 0.f) && (s1 > 0.f))//Fully supersonic case. Everything is right-going
         {
             amdq[i].h = 0.f;
             amdq[i].hu = 0.f;
-            apdq[i].h = s1[i]*wave1[i].h + s2[i]*wave2[i].h;
-            apdq[i].hu = s1[i]*wave1[i].hu + s2[i]*wave2[i].hu;
+            apdq[i].h = s1*wave1.h + s2*wave2.h;
+            apdq[i].hu = s1*wave1.hu + s2*wave2.hu;
         }
         else//check if 1-wave is transonic wave
         {
-            float hr1 = s_q[s_i].h + wave1[i].h;
-            float uhr1 = s_q[s_i].hu + wave1[i].hu;
+            float hr1 = s_q[s_i].h + wave1.h;
+            float uhr1 = s_q[s_i].hu + wave1.hu;
             float s1_r = uhr1/hr1 - sqrt(GRAVITY*hr1);//slope of 1-character, u-c, to the right of 1-wave
         //2.
             if ((s1_l < 0.f) && (s1_r > 0.f))//transonic rarefaction in the 1-wave
             {
-                float beta = (s1_r-s1[i])/(s1_r-s1_l); //eq (15.49) in the FVMHP book
-                amdq[i].h = beta*s1_l*wave1[i].h;
-                amdq[i].hu = beta*s1_l*wave1[i].hu;
-                apdq[i].h = (1-beta)*s1_r*wave1[i].h + s2[i]*wave2[i].h; 
-                apdq[i].hu = (1-beta)*s1_r*wave1[i].hu + s2[i]*wave2[i].hu; 
+                float beta = (s1_r-s1)/(s1_r-s1_l); //eq (15.49) in the FVMHP book
+                amdq[i].h = beta*s1_l*wave1.h;
+                amdq[i].hu = beta*s1_l*wave1.hu;
+                apdq[i].h = (1-beta)*s1_r*wave1.h + s2*wave2.h; 
+                apdq[i].hu = (1-beta)*s1_r*wave1.hu + s2*wave2.hu; 
             }
-            else if (s1[i] < 0.f)//1-wave is left-going. Then check 2-wave
+            else if (s1 < 0.f)//1-wave is left-going. Then check 2-wave
             {
                 
                 float s2_r = s_q[s_i+1].hu/s_q[s_i+1].h + sqrt(GRAVITY*s_q[s_i+1].h);//slope of 2-character, u+c, to the right of 2-wave
-                float hl2 = q[i+1].h - wave2[i].h;
-                float uhl2 = q[i+1].hu - wave2[i].hu;
+                float hl2 = q[i+1].h - wave2.h;
+                float uhl2 = q[i+1].hu - wave2.hu;
                 float s2_l = uhl2/hl2 + sqrt(GRAVITY*hl2);//slope of 2-character, u+c, to the left of 2-wave
         //3.
                 if ((s2_l < 0.f) && (s2_r > 0.f))//transonic rarefaction in the 2-wave
                 {
-                    float beta = (s2_r-s2[i])/(s2_r-s2_l);
-                    amdq[i].h = s1[i]*wave1[i].h + beta*s2_l*wave2[i].h;
-                    amdq[i].hu = s1[i]*wave1[i].hu + beta*s2_l*wave2[i].hu;
-                    apdq[i].h = (1-beta)*s2_r*wave2[i].h;
-                    apdq[i].hu = (1-beta)*s2_r*wave2[i].hu;
+                    float beta = (s2_r-s2)/(s2_r-s2_l);
+                    amdq[i].h = s1*wave1.h + beta*s2_l*wave2.h;
+                    amdq[i].hu = s1*wave1.hu + beta*s2_l*wave2.hu;
+                    apdq[i].h = (1-beta)*s2_r*wave2.h;
+                    apdq[i].hu = (1-beta)*s2_r*wave2.hu;
                 }
         //4.
-                else if (s2[i] < 0.f)//2-wave is left-going
+                else if (s2 < 0.f)//2-wave is left-going
                 {
-                    amdq[i].h = s1[i]*wave1[i].h + s2[i]*wave2[i].h;
-                    amdq[i].hu = s1[i]*wave1[i].hu + s2[i]*wave2[i].hu;
+                    amdq[i].h = s1*wave1.h + s2*wave2.h;
+                    amdq[i].hu = s1*wave1.hu + s2*wave2.hu;
                     apdq[i].h = 0.f;
                     apdq[i].hu = 0.f;
                 }
         //5.
-                else if (s2[i] > 0.f)//2-wave is right going
+                else if (s2 > 0.f)//2-wave is right going
                 {
-                    amdq[i].h = s1[i]*wave1[i].h;
-                    amdq[i].hu = s1[i]*wave1[i].hu;
-                    apdq[i].h = s2[i]*wave2[i].h;
-                    apdq[i].hu = s2[i]*wave2[i].hu;
+                    amdq[i].h = s1*wave1.h;
+                    amdq[i].hu = s1*wave1.hu;
+                    apdq[i].h = s2*wave2.h;
+                    apdq[i].hu = s2*wave2.hu;
                 }
                 else//this should not happend
                 {
@@ -625,8 +635,8 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
         //do not update q[0], which is ghost cell
     if (i < MX) //update q with indices from 1 to MX
     {
-        q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[i+1].h); 
-        q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[i+1].hu); 
+        q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[s_i+1].h); 
+        q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[s_i+1].hu); 
     }
     __syncthreads();
 }
@@ -656,7 +666,7 @@ void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const flo
     cudaMalloc(&d_s1, (MX+MBC)*sizeof(float));
     cudaMalloc(&d_s2, (MX+MBC)*sizeof(float));
 
-    const size_t smemSize = (TPB + MBC)*sizeof(Shallow2);
+    const size_t smemSize = (TPB + MBC + 2*TPB)*sizeof(Shallow2);//size of shared memory for q, amdq, apdq in each block
 
     std::cout<<"Solving SWE in parallel with shared memory."<<std::endl;
     //std::cout<<"Write data at step 0 to file."<<std::endl;
@@ -673,7 +683,7 @@ void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const flo
         t = t + dt;
         //std::cout<<"Step: "<<std::to_string(n+1)<<std::endl;
         //std::cout<<"t = "<<std::to_string(t)<<std::endl;
-        rp1Kernel_shared_memory<<<((m-1)+TPB-1)/TPB,TPB,smemSize>>>(d_q, d_amdq, d_apdq, d_wave1, d_wave2, d_s1, d_s2, dt, dx, EFIX);// q should include ghost cells
+        rp1Kernel_shared_memory<<<((m-1)+TPB-1)/TPB,TPB,smemSize>>>(d_q, d_amdq, d_apdq, dt, dx, EFIX);// q should include ghost cells
         if ((n+1) % OUTPUT_FREQUENCY == 0 )//write output at specified time
         {
             std::cout<<"Writing data at t = "<<std::to_string(t)<<" to file."<<std::endl;

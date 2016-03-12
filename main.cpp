@@ -35,19 +35,19 @@ int main() {
     std::cout<<"Time elapsed for CPU implementation (ms): "<<timeInMs0<<std::endl; 
 
     //GPU implementation with global memory
-    cudaEvent_t start1, stop1;
-    cudaEventCreate(&start1);
-    cudaEventCreate(&stop1);
-    cudaEventRecord(start1);
-    Shallow2* q1 = (Shallow2*) malloc(m*sizeof(Shallow2));
-    qinit(q1,m,caseNo);
-    godunov_parallel_global_memory(q1, x, dt, NSTEPS, dx);
-    free(q1);
-    cudaEventRecord(stop1);
-    cudaEventSynchronize(stop1);
-    float timeInMs1 = 0;
-    cudaEventElapsedTime(&timeInMs1, start1, stop1);
-    std::cout<<"Time elapsed for GPU implementation with global memory (ms): "<<timeInMs1<<std::endl;
+    //cudaEvent_t start1, stop1;
+    //cudaEventCreate(&start1);
+    //cudaEventCreate(&stop1);
+    //cudaEventRecord(start1);
+    //Shallow2* q1 = (Shallow2*) malloc(m*sizeof(Shallow2));
+    //qinit(q1,m,caseNo);
+    //godunov_parallel_global_memory(q1, x, dt, NSTEPS, dx);
+    //free(q1);
+    //cudaEventRecord(stop1);
+    //cudaEventSynchronize(stop1);
+    //float timeInMs1 = 0;
+    //cudaEventElapsedTime(&timeInMs1, start1, stop1);
+    //std::cout<<"Time elapsed for GPU implementation with global memory (ms): "<<timeInMs1<<std::endl;
 
     //GPU implementation with shared memory
     cudaEvent_t start2, stop2;
