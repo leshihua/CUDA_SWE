@@ -2,15 +2,15 @@
 #define KERNEL_H
 
 //For standard testing
-#define MX 20000// number of cells
-#define OUTPUT_FREQUENCY 10000// write output every OUTPUT_FREQUENCY steps 
-#define NSTEPS 40000
+//#define MX 20000// number of cells
+//#define OUTPUT_FREQUENCY 10000// write output every OUTPUT_FREQUENCY steps 
+//#define NSTEPS 40000
 
-//#define MX 200// number of cells
+#define MX 100// number of cells
+#define NSTEPS 400//number of time steps
+#define OUTPUT_FREQUENCY 40// write output every OUTPUT_FREQUENCY steps 
+
 #define MBC 1 //number of ghost cells at one side
-//#define NUM_OUTPUT_TIMES 5 //number of output times
-//#define NSTEPS 400//number of time steps
-//#define OUTPUT_FREQUENCY 40// write output every OUTPUT_FREQUENCY steps 
 #define GRAVITY 9.81
 #define EFIX true
 

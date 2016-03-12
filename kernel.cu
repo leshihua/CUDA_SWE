@@ -7,7 +7,7 @@
 #include "kernel.h"
 //#include <cuda_runtime_api.h>
 //#include <cuda.h>
-#define TPB 256 
+#define TPB  32
 //#define TPB 4 
 
 
@@ -470,27 +470,26 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     /*
     numbering of cell and interface
 
-    /-----------shared memory in block 0------------\
-    |--0--|--1--|--2--|.......|----TPB----|-(TPB+1)-|
-          0     1     2    ........      TPB    
+          /------shared memory in block 0-----------\
+          |--0--|--1--|.......|--(TPB-1)--|---TPB---|
+      s_i:      0     1    ........     TPB-1    
 
-                              /------------shared memory in block 1--------------\
-                              |-----0-----|----1----| ...|-----TPB-----|-(TPB+1)-|
-                                          0         1  .........      TPB    
+                                          /--------shared memory in block 1------\
+                                          |----0----|....|---(TPB-1)---|---TPB---|
+                                     s_i:           0  ............  TPB-1    
+                                                                                    .....
+                                                                                           /-----------shared memory in block N--------------\
+                                                                                           |-----0-----|....|--XX--|---XX---|......|---TPB---|
+                                                                                      s_i:             0       ..........        TPB-1
 
-                                                         /----------shared memory in block 2 .... 
-                                                         |------0------|----1----| ......
-                                                                       0         1 ......
+          /------------------------------------------------global memory----------------------------------------------------\
+          |--0--|--1--|.......|--(TPB-1)--|---TPB---|....|--(2*TPB-1)--|--2*TPB--|.........|---N*TPB---|....|--MX--|--MX+1--|
+                |     |       |           |         |                  |         |                     |           | 
+        i:      0     1 .... TPB-2     TPB-1       TPB .........   (2*TPB-1)   2*TPB     .......     N*TPB  ....   MX 
 
-          /------------------------------------global memory------------------------------------------\
-          |--0--|--1--|.......|--(TPB-1)--|---TPB---|....|--(2*TPB-1)--|--2*TPB--|....|--MX--|--MX+1--|
-                |     |       |           |         |                  |         |           | 
-                0     1 .... TPB-2     TPB-1       TPB .........   (2*TPB-1)   2*TPB ...... MX  
-
-        Riemann problems are solve at each interface: i ranges from 0 to MX; 
-        In each block (e.g. in 1st block):
-        i ranges from 0 to TPB-1 => s_i ranges from 1 to TBP
-        TODO: we don't really need info in s_q[0]
+        Riemann problems are solve at each interface: i ranges from 0 to MX globally; 
+        In each block:
+        i ranges from 0 to TPB-1, from TPB to 2*TPB-1 and ... => s_i ranges from 0 to TBP-1 
     */
     if (i > (MX+MBC-1)) return; 
     //update B.C.
@@ -506,24 +505,27 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     }
     __syncthreads();//To make the loading from global to shared concurrently
 
-    const int s_i = threadIdx.x+1;//shared index
+    //const int s_i = threadIdx.x+1;//shared index
+    const int s_i = threadIdx.x;//shared index
     extern __shared__ Shallow2 s_q[];//q on shared memory
     //load regular cells
     s_q[s_i] = q[i];
     //load halo cells
     //able to handle cases where MX is not multiple of TPB
-    if (i == MX) {//last thread in last block
-        s_q[0] = q[i-threadIdx.x-1];
-        s_q[2+threadIdx.x] = q[i+1];
+    if (i == MX) {//use last thread in last block to load halo cell for last piece of shared memory
+        s_q[0] = q[i-threadIdx.x];
+        s_q[threadIdx.x+1] = q[i+1];
     }
-    else if ( (i+1)%blockDim.x == 0 ) { //use the last thread of in a block to load halo cell, except for last block
-        if (i > blockDim.x) {//in 1st block, don't load q[-1] to s_q[0]
-            s_q[0] = q[i-blockDim.x];
-        }
-        s_q[1+blockDim.x] = q[i+1];//load right halo cell
+    else if ( (i+1)%blockDim.x == 0 ) { //use the last thread in a block to load halo cell, except for last block
+        //if (i > blockDim.x) {//in 1st block, don't load q[-1] to s_q[0]
+        //    s_q[0] = q[i-blockDim.x];
+        //}
+        s_q[blockDim.x] = q[i+1];//load right halo cell
     }
     __syncthreads();//finish reading all data into shared memory
 
+
+    //compute amdq and apdq at cell inteface i
     //compute  Roe-averaged quantities:
     float ubar = (s_q[s_i].hu/sqrt(s_q[s_i].h) + s_q[s_i+1].hu/sqrt(s_q[s_i+1].h)) / (sqrt(s_q[s_i].h) + sqrt(s_q[s_i+1].h));  
     float cbar = sqrt(GRAVITY*0.5*(s_q[s_i].h + s_q[s_i+1].h));
@@ -621,7 +623,7 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
 
         //update q
         //do not update q[0], which is ghost cell
-    if (i < MX) //i+1 changes from 1 to MX
+    if (i < MX) //update q with indices from 1 to MX
     {
         q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[i+1].h); 
         q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[i+1].hu); 

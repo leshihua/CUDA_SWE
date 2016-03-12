@@ -8,22 +8,23 @@
 #include <time.h>
 
 int main() {
-    //const float x_lower = -5.f;
-    //const float x_upper = 5.f;
-    const float x_lower = -500.f;
-    const float x_upper = 500.f;
+    const float x_lower = -5.f;
+    const float x_upper = 5.f;
+    //const float x_lower = -500.f;
+    //const float x_upper = 500.f;
     const float dx = (x_upper-x_lower)/MX;
     float* x = (float*) malloc( (MX+2*MBC)*sizeof(float));
     generateMesh(x,x_lower,x_upper);
-    const float tfinal = 100.f;
-    //const float tfinal = 1.f;
+    //const float tfinal = 100.f;
+    const float tfinal = 1.f;
     //const float cfl = 0.9;
 
     //I.C.
     const float dt = tfinal/NSTEPS;
-    const int caseNo = 2;
+    const int caseNo = 3;
     int m = MX+2*MBC;
 
+    //CPU implementation
     clock_t start0 = clock();
     Shallow2* q0 = (Shallow2*) malloc(m*sizeof(Shallow2));
     qinit(q0,m,caseNo);
