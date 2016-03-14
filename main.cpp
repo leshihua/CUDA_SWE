@@ -21,7 +21,7 @@ int main() {
 
     //I.C.
     const float dt = tfinal/NSTEPS;
-    const int caseNo = 3;
+    const int caseNo = 0;
     int m = MX+2*MBC;
 
     //CPU implementation

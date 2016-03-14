@@ -464,37 +464,10 @@ void godunov_parallel_global_memory(Shallow2 *q, const float* const x, const flo
 
 //shared memory for only input array
 __global__
-//void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
-void rp1Kernel_shared_memory(Shallow2* q, float dt, float dx, bool efix) // q should include ghost cells
+void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
 {
     const int i = threadIdx.x + blockDim.x*blockIdx.x;
     /*
-    numbering of cell and interface 
-          /-----------shared memory in block 0--------------\
-          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|
-      s_i:      0     1    ........     TPB-1    TPB
-
-                                          /----------shared memory in block 1------------\
-                                          |---0---|----1----|....|---(TPB-1)---|---TPB---|--(TPB+1)--|
-                                     s_i:         0         1  ............  TPB-1      TPB   
-                                                                                  .....
-                                                                                                               /-----------shared memory in block N--------------\
-                                                                                                               |-----0-----|....|--XX--|---XX---|......|---TPB---|
-                                                                                                          s_i:             0       ..........        TPB-1
-
-          /--------------------------------------------------------global memory----------------------------------------------------------------\
-          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|....|--(2*TPB-1)--|--2*TPB--|-(2*TPB+1)-|.........|---N*TPB---|....|--MX--|--MX+1--|
-                |     |       |           |       |                            |         |                     |           | 
-        i:      0     1 .... TPB-2     TPB-1     TPB     TPB+1     .....   (2*TPB-1)   2*TPB      2*TPB+1    .......     N*TPB  ....   MX 
-
-        Riemann problems are solve at each interface: i ranges from 0 to MX globally; 
-        In each block:
-            At interface:
-                we compute amdq and apdq with indices from from 0 to TPB: TPB+1 Rieman problems are solved in each block
-            At cell center:
-                We update q wth i indices from 1 to TPB, TPB+1 to 2*TPB ..., which => s_q with indices ranges from 1 to TPB
-
-    VERSION II:
     numbering of cell and interface 
           /-------shared memory in block 0--------\
           |--0--|--1--|.......|--(TPB-1)--|--TPB--|
@@ -535,14 +508,8 @@ void rp1Kernel_shared_memory(Shallow2* q, float dt, float dx, bool efix) // q sh
     }
     __syncthreads();//To make the loading from global to shared concurrently
 
-    //const int s_i = threadIdx.x+1;//shared index
     const int s_i = threadIdx.x;//shared index
-    extern __shared__ Shallow2 s_block[];//shared memory
-    Shallow2* s_q = s_block;//q on shared memory
-    Shallow2* amdq = &s_block[blockDim.x+2];//amdq on shared memory 
-    Shallow2* apdq = &s_block[blockDim.x+2+blockDim.x];//apdq on shared memory 
-    //Shallow2* amdq = &s_block[4*blockDim.x+1];//amdq on shared memory 
-    //Shallow2* apdq = &s_block[8*blockDim.x+1+blockDim.x];//apdq on shared memory 
+    extern __shared__ Shallow2 s_q[];//shared memory
     Shallow2 wave1;
     Shallow2 wave2;
     float s1;
@@ -556,11 +523,7 @@ void rp1Kernel_shared_memory(Shallow2* q, float dt, float dx, bool efix) // q sh
         s_q[threadIdx.x+1] = q[i+1];
     }
     else if ( (i+1)%blockDim.x == 0 ) { //use the last thread in a block to load halo cell, except for last block
-        //if (i > blockDim.x) {//in 1st block, don't load q[-1] to s_q[0]
-        //    s_q[0] = q[i-blockDim.x];
-        //}
         s_q[blockDim.x] = q[i+1];//load right halo cell
-        s_q[blockDim.x+1] = q[i+2];//there are two halo cells to the right of each block
     }
     __syncthreads();//finish reading all data into shared memory
 
@@ -661,44 +624,33 @@ void rp1Kernel_shared_memory(Shallow2* q, float dt, float dx, bool efix) // q sh
     }
     __syncthreads();
 
-        //update q
-        //do not update q[0], which is ghost cell
+    //update q
+    //do not update q[0], which is ghost cell
     if (i < MX) //update q with indices from 1 to MX
     {
-        //q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[s_i+1].h); 
-        //q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[s_i+1].hu); 
         q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[i+1].h); 
         q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[i+1].hu); 
     }
     __syncthreads();
 }
 
-//todo: finish rp1Kernel_shared_memory2
-//shared memory for both input and output array
+//todo: we don't have to copy every entries in s_q to global q at each iteration: we only have to copy updated halo cells to another block 
+//and copy all s_q to q when we need to copy q from device to host
 
 void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const float dt, const int nsteps, const float dx) 
 {
     int m = MX+2*MBC;
     float t = 0.f;
     Shallow2 *d_q = 0;
-    //void *d_q = NULL;
     cudaMalloc(&d_q, m*sizeof(Shallow2));
     cudaMemcpy(d_q,q,m*sizeof(Shallow2),cudaMemcpyHostToDevice);
 
-    Shallow2 *d_wave1 = 0;
-    Shallow2 *d_wave2 = 0;
     Shallow2 *d_amdq = 0;
     Shallow2 *d_apdq = 0;
-    float *d_s1 = 0;
-    float *d_s2 = 0;
-    cudaMalloc(&d_wave1, (MX+MBC)*sizeof(Shallow2));
-    cudaMalloc(&d_wave2, (MX+MBC)*sizeof(Shallow2));
     cudaMalloc(&d_amdq, (MX+MBC)*sizeof(Shallow2));
     cudaMalloc(&d_apdq, (MX+MBC)*sizeof(Shallow2));
-    cudaMalloc(&d_s1, (MX+MBC)*sizeof(float));
-    cudaMalloc(&d_s2, (MX+MBC)*sizeof(float));
 
-    const size_t smemSize = (TPB + MBC + 2*TPB)*sizeof(Shallow2);//size of shared memory for q, amdq, apdq in each block
+    const size_t smemSize = (TPB + MBC )*sizeof(Shallow2);//size of shared memory for q, amdq, apdq in each block
 
     std::cout<<"Solving SWE in parallel with shared memory."<<std::endl;
     //std::cout<<"Write data at step 0 to file."<<std::endl;
@@ -730,10 +682,6 @@ void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const flo
         }
     }
     cudaFree(d_q);
-    cudaFree(d_wave1);
-    cudaFree(d_wave2);
     cudaFree(d_amdq);
     cudaFree(d_apdq);
-    cudaFree(d_s1);
-    cudaFree(d_s2);
 }
