@@ -1,4 +1,4 @@
-#include <math.h>
+#include<math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string>
@@ -464,32 +464,62 @@ void godunov_parallel_global_memory(Shallow2 *q, const float* const x, const flo
 
 //shared memory for only input array
 __global__
-void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
+//void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
+void rp1Kernel_shared_memory(Shallow2* q, float dt, float dx, bool efix) // q should include ghost cells
 {
     const int i = threadIdx.x + blockDim.x*blockIdx.x;
     /*
-    numbering of cell and interface
+    numbering of cell and interface 
+          /-----------shared memory in block 0--------------\
+          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|
+      s_i:      0     1    ........     TPB-1    TPB
 
-          /------shared memory in block 0-----------\
-          |--0--|--1--|.......|--(TPB-1)--|---TPB---|
-      s_i:      0     1    ........     TPB-1    
+                                          /----------shared memory in block 1------------\
+                                          |---0---|----1----|....|---(TPB-1)---|---TPB---|--(TPB+1)--|
+                                     s_i:         0         1  ............  TPB-1      TPB   
+                                                                                  .....
+                                                                                                               /-----------shared memory in block N--------------\
+                                                                                                               |-----0-----|....|--XX--|---XX---|......|---TPB---|
+                                                                                                          s_i:             0       ..........        TPB-1
 
-                                          /--------shared memory in block 1------\
-                                          |----0----|....|---(TPB-1)---|---TPB---|
-                                     s_i:           0  ............  TPB-1    
-                                                                                    .....
-                                                                                           /-----------shared memory in block N--------------\
-                                                                                           |-----0-----|....|--XX--|---XX---|......|---TPB---|
-                                                                                      s_i:             0       ..........        TPB-1
-
-          /------------------------------------------------global memory----------------------------------------------------\
-          |--0--|--1--|.......|--(TPB-1)--|---TPB---|....|--(2*TPB-1)--|--2*TPB--|.........|---N*TPB---|....|--MX--|--MX+1--|
-                |     |       |           |         |                  |         |                     |           | 
-        i:      0     1 .... TPB-2     TPB-1       TPB .........   (2*TPB-1)   2*TPB     .......     N*TPB  ....   MX 
+          /--------------------------------------------------------global memory----------------------------------------------------------------\
+          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|....|--(2*TPB-1)--|--2*TPB--|-(2*TPB+1)-|.........|---N*TPB---|....|--MX--|--MX+1--|
+                |     |       |           |       |                            |         |                     |           | 
+        i:      0     1 .... TPB-2     TPB-1     TPB     TPB+1     .....   (2*TPB-1)   2*TPB      2*TPB+1    .......     N*TPB  ....   MX 
 
         Riemann problems are solve at each interface: i ranges from 0 to MX globally; 
         In each block:
-        i ranges from 0 to TPB-1, from TPB to 2*TPB-1 and ... => s_i ranges from 0 to TBP-1 
+            At interface:
+                we compute amdq and apdq with indices from from 0 to TPB: TPB+1 Rieman problems are solved in each block
+            At cell center:
+                We update q wth i indices from 1 to TPB, TPB+1 to 2*TPB ..., which => s_q with indices ranges from 1 to TPB
+
+    VERSION II:
+    numbering of cell and interface 
+          /-------shared memory in block 0--------\
+          |--0--|--1--|.......|--(TPB-1)--|--TPB--|
+      s_i:      0     1    ........     TPB-1    
+
+                                          /----------shared memory in block 1------------\
+                                          |---0---|----1----|....|---(TPB-1)---|---TPB---|
+                                     s_i:         0         1  ............  TPB-1      
+                                                                                                  .....
+                                                                                                               /-----------shared memory in block N--------------\
+                                                                                                               |-----0-----|....|--XX--|---XX---|......|---TPB---|
+                                                                                                          s_i:             0       ..........        TPB-1
+
+          /--------------------------------------------------------global memory----------------------------------------------------------------\
+          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|....|--(2*TPB-1)--|--2*TPB--|-(2*TPB+1)-|.........|---N*TPB---|....|--MX--|--MX+1--|
+                |     |       |           |       |                            |         |                     |           | 
+        i:      0     1 .... TPB-2     TPB-1     TPB     TPB+1     .....   (2*TPB-1)   2*TPB      2*TPB+1    .......     N*TPB  ....   MX 
+
+        Riemann problems are solve at each interface with indices i ranges from 0 to MX globally; 
+        In each block:
+            At interface:
+                we compute amdq and apdq with indices from from 0 to TPB-1: TPB Rieman problems are solved in each block
+            At cell center:
+                We update q wth i indices from 1 to TPB, TPB+1 to 2*TPB ..., which => s_q with indices ranges from 1 to TPB
+
     */
     if (i > (MX+MBC-1)) return; 
     //update B.C.
@@ -507,11 +537,10 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float 
 
     //const int s_i = threadIdx.x+1;//shared index
     const int s_i = threadIdx.x;//shared index
-    extern __shared__ Shallow2 s_q[];//shared memory
-    //extern __shared__ Shallow2 s_block[];//shared memory
-    //Shallow2* s_q = s_block;//q on shared memory
-    //Shallow2* amdq = &s_block[blockDim.x+1];//amdq on shared memory 
-    //Shallow2* apdq = &s_block[blockDim.x+1+blockDim.x];//apdq on shared memory 
+    extern __shared__ Shallow2 s_block[];//shared memory
+    Shallow2* s_q = s_block;//q on shared memory
+    Shallow2* amdq = &s_block[blockDim.x+2];//amdq on shared memory 
+    Shallow2* apdq = &s_block[blockDim.x+2+blockDim.x];//apdq on shared memory 
     //Shallow2* amdq = &s_block[4*blockDim.x+1];//amdq on shared memory 
     //Shallow2* apdq = &s_block[8*blockDim.x+1+blockDim.x];//apdq on shared memory 
     Shallow2 wave1;
@@ -531,6 +560,7 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float 
         //    s_q[0] = q[i-blockDim.x];
         //}
         s_q[blockDim.x] = q[i+1];//load right halo cell
+        s_q[blockDim.x+1] = q[i+2];//there are two halo cells to the right of each block
     }
     __syncthreads();//finish reading all data into shared memory
 
@@ -635,8 +665,10 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float 
         //do not update q[0], which is ghost cell
     if (i < MX) //update q with indices from 1 to MX
     {
-        q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[s_i+1].h); 
-        q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[s_i+1].hu); 
+        //q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[s_i+1].h); 
+        //q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[s_i+1].hu); 
+        q[i+1].h = s_q[s_i+1].h - dt/dx*(apdq[i].h + amdq[i+1].h); 
+        q[i+1].hu = s_q[s_i+1].hu - dt/dx*(apdq[i].hu + amdq[i+1].hu); 
     }
     __syncthreads();
 }

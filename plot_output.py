@@ -39,6 +39,6 @@ for f in f_list:
     axes[1].set_ylim(history[:,2].min()-margin*y1range,history[:,2].max()+margin*y1range)
     if not('myplot' in os.listdir('./')):
         os.mkdir('myplot')
-    plt.savefig('./myplot/'+f+'.png', bbox_inches='tight',dpi=50)
+    plt.savefig('./myplot/'+f+'.png', bbox_inches='tight',dpi=100)
     plt.close()
 
