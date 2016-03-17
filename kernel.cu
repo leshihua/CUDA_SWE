@@ -7,7 +7,7 @@
 #include "kernel.h"
 //#include <cuda_runtime_api.h>
 //#include <cuda.h>
-#define TPB 32
+#define TPB 128
 //#define TPB 4 
 
 
@@ -46,7 +46,14 @@ void qinit(Shallow2* q0, int m, int caseNo) //should include ghost cells
         uhl = 2.f;
         uhr = 1.f;
     }
-    else if (4 == caseNo)//to test if q is initialized correctly
+    else if (4 == caseNo)//dambreak problem
+    {
+        hl = 3.f;
+        hr = 1.f;
+        uhl = 0.f;
+        uhr = 0.f;
+    }
+    else if (5 == caseNo)//to test if q is initialized correctly
     {
         for (int i = 0; i < m; i++){
             q0[i].h = i;
@@ -421,7 +428,7 @@ void godunov_parallel_global_memory(Shallow2 *q, const float* const x, const flo
     cudaMalloc(&d_s2, (MX+MBC)*sizeof(float));
 
     std::cout<<"Solving SWE in parallel with global memory."<<std::endl;
-    //std::cout<<"Write data at step 0 to file."<<std::endl;
+    std::cout<<"Write data at step 0 to file."<<std::endl;
     std::ofstream outfile;
     outfile.open("output_global_0");
     for (int j = MBC; j < MX+MBC; j++)//write initial value of q
@@ -653,7 +660,7 @@ void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const flo
     const size_t smemSize = (TPB + MBC )*sizeof(Shallow2);//size of shared memory for q, amdq, apdq in each block
 
     std::cout<<"Solving SWE in parallel with shared memory."<<std::endl;
-    //std::cout<<"Write data at step 0 to file."<<std::endl;
+    std::cout<<"Write data at step 0 to file."<<std::endl;
     std::ofstream outfile;
     outfile.open("output_shared_0");
     for (int j = MBC; j < MX+MBC; j++)//write initial value of q
@@ -665,9 +672,9 @@ void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const flo
     for (int n = 0; n < nsteps; n ++)//update q
     {
         t = t + dt;
+        rp1Kernel_shared_memory<<<((m-1)+TPB-1)/TPB,TPB,smemSize>>>(d_q, d_amdq, d_apdq, dt, dx, EFIX);// q should include ghost cells
         //std::cout<<"Step: "<<std::to_string(n+1)<<std::endl;
         //std::cout<<"t = "<<std::to_string(t)<<std::endl;
-        rp1Kernel_shared_memory<<<((m-1)+TPB-1)/TPB,TPB,smemSize>>>(d_q, d_amdq, d_apdq, dt, dx, EFIX);// q should include ghost cells
         if ((n+1) % OUTPUT_FREQUENCY == 0 )//write output at specified time
         {
             std::cout<<"Writing data at t = "<<std::to_string(t)<<" to file."<<std::endl;

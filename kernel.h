@@ -3,8 +3,8 @@
 
 //For standard testing
 //#define MX 20000// number of cells
-//#define OUTPUT_FREQUENCY 10000// write output every OUTPUT_FREQUENCY steps 
 //#define NSTEPS 40000
+//#define OUTPUT_FREQUENCY 40000// write output every OUTPUT_FREQUENCY steps 
 
 #define MX 100// number of cells
 #define NSTEPS 400//number of time steps

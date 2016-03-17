@@ -1,9 +1,13 @@
 COMPILER = /usr/local/cuda/bin/nvcc
 #COMPILER = /usr/bin/g++
+
 FLAGS = -g -G -Xcompiler -Wall -std=c++11
-#FLAGS =  -std=c++11
-INCLUDE = -I/usr/local/cuda/include
+#FLAGS =  -std=c++11 --optimize 3
+#FLAGS =  -std=c++11 
 #FLAGS = -g -std=c++11 # for gcc
+
+
+INCLUDE = -I/usr/local/cuda/include
 
 
 all: main.exe
