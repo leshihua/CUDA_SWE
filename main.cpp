@@ -31,7 +31,7 @@ int main() {
     std::cout<<"Time elapsed for CPU implementation (ms): "<<timeInMs0<<std::endl; 
 
     cudaSetDevice(0);
-    query device properties
+    //query device properties
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     std::cout<<"Running on device: "<<prop.name<<std::endl;

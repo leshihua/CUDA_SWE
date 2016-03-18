@@ -280,12 +280,6 @@ void rp1Kernel_global_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     }
     __syncthreads();
 
-    /*
-       numbering of cell and interface
-       |--0--|--1--|--2--|........|--MX--|--MX+1--|
-             0     1     2  ...  MX-1    MX  
-       Riemann problems are solve at each interface 
-    */
     //compute  Roe-averaged quantities:
     float ubar = (q[i].hu/sqrt(q[i].h) + q[i+1].hu/sqrt(q[i+1].h)) / (sqrt(q[i].h) + sqrt(q[i+1].h));  
     float cbar = sqrt(GRAVITY*0.5*(q[i].h + q[i+1].h));
