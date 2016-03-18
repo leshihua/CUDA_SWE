@@ -5,11 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include "kernel.h"
-//#include <cuda_runtime_api.h>
-//#include <cuda.h>
 #define TPB 128
-//#define TPB 4 
-
 
 
 void qinit(Shallow2* q0, int m, int caseNo) //should include ghost cells
@@ -93,18 +89,8 @@ void generateMesh(float* x, float x_lower, float x_upper)
     return; 
 }
 
-
 void rp1(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallow2* wave1, Shallow2* wave2, float* s1, float* s2, float dt, float dx, bool efix) // q should include ghost cells
 {
-    /*
-        numbering of cell and interface
-        |--0--|--1--|--2--|........|--MX--|--MX+1--|
-              0     1     2  ...  MX-1    MX  
-        Riemann problems are solve at each interface 
-        i ranges from 0 to MX; 
-        index of q ranges from 0 to MX+1
-    */
-    //apply B.C.
     q[0].h = q[1].h;
     q[MX+MBC].h = q[MX].h;
     q[0].hu = q[1].hu;
@@ -236,8 +222,6 @@ void godunov_serial(Shallow2 *q, const float* const x, const float dt, const int
     float* s1 = (float*) malloc((MX+MBC)*sizeof(float));//speed of 1-wave
     float* s2 = (float*) malloc((MX+MBC)*sizeof(float));//speed of 2-wave
     std::cout<<"Solving SWE in serial."<<std::endl;
-    //std::cout<<"dt = "<<std::to_string(dt)<<std::endl;
-    //std::cout<<"dx = "<<std::to_string(dx)<<std::endl;
     std::cout<<"Writing data at step 0 to file."<<std::endl;
     std::ofstream outfile;
     outfile.open("output_serial_0");
@@ -324,7 +308,6 @@ void rp1Kernel_global_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, Shallo
     //First compute amdq as sum of s*wave for left going waves.
     //Incorporate entropy fix by adding a modified fraction of wave
     //if s should change sign.
-    //todo: print CFL number
         float s1_l = q[i].hu/q[i].h - sqrt(GRAVITY*q[i].h);//slope of 1-character, u-c, to the left of 1-wave
         //1.
         if ((s1_l >= 0.f) && (s1[i] > 0.f))//Fully supersonic case. Everything is right-going
@@ -474,33 +457,13 @@ __global__
 void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float dt, float dx, bool efix) // q should include ghost cells
 {
     const int i = threadIdx.x + blockDim.x*blockIdx.x;
-    /*
-    numbering of cell and interface 
-          /-------shared memory in block 0--------\
-          |--0--|--1--|.......|--(TPB-1)--|--TPB--|
-      s_i:      0     1    ........     TPB-1    
+    //Riemann problems are solve at each interface with indices i ranges from 0 to MX globally; 
+    //In each block:
+    //    At interface:
+    //        we compute amdq and apdq with indices from from 0 to TPB-1: TPB Rieman problems are solved in each block
+    //    At cell center:
+    //        We update q wth i indices from 1 to TPB, TPB+1 to 2*TPB ..., which => s_q with indices ranges from 1 to TPB
 
-                                          /----------shared memory in block 1------------\
-                                          |---0---|----1----|....|---(TPB-1)---|---TPB---|
-                                     s_i:         0         1  ............  TPB-1      
-                                                                                                  .....
-                                                                                                               /-----------shared memory in block N--------------\
-                                                                                                               |-----0-----|....|--XX--|---XX---|......|---TPB---|
-                                                                                                          s_i:             0       ..........        TPB-1
-
-          /--------------------------------------------------------global memory----------------------------------------------------------------\
-          |--0--|--1--|.......|--(TPB-1)--|--TPB--|-(TPB+1)-|....|--(2*TPB-1)--|--2*TPB--|-(2*TPB+1)-|.........|---N*TPB---|....|--MX--|--MX+1--|
-                |     |       |           |       |                            |         |                     |           | 
-        i:      0     1 .... TPB-2     TPB-1     TPB     TPB+1     .....   (2*TPB-1)   2*TPB      2*TPB+1    .......     N*TPB  ....   MX 
-
-        Riemann problems are solve at each interface with indices i ranges from 0 to MX globally; 
-        In each block:
-            At interface:
-                we compute amdq and apdq with indices from from 0 to TPB-1: TPB Rieman problems are solved in each block
-            At cell center:
-                We update q wth i indices from 1 to TPB, TPB+1 to 2*TPB ..., which => s_q with indices ranges from 1 to TPB
-
-    */
     if (i > (MX+MBC-1)) return; 
     //update B.C.
     if (i < MBC)//i = 0
@@ -558,7 +521,6 @@ void rp1Kernel_shared_memory(Shallow2* q, Shallow2* amdq, Shallow2* apdq, float 
     //First compute amdq as sum of s*wave for left going waves.
     //Incorporate entropy fix by adding a modified fraction of wave
     //if s should change sign.
-    //todo: print CFL number
         float s1_l = s_q[s_i].hu/s_q[s_i].h - sqrt(GRAVITY*s_q[s_i].h);//slope of 1-character, u-c, to the left of 1-wave
         //1.
         if ((s1_l >= 0.f) && (s1 > 0.f))//Fully supersonic case. Everything is right-going

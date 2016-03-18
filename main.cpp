@@ -11,13 +11,9 @@ int main() {
     const float x_lower = -5.f;
     const float x_upper = 5.f;
     const float tfinal = 1.f;
-    //const float x_lower = -500.f;
-    //const float x_upper = 500.f;
-    //const float tfinal = 100.f;
     const float dx = (x_upper-x_lower)/MX;
     float* x = (float*) malloc( (MX+2*MBC)*sizeof(float));
     generateMesh(x,x_lower,x_upper);
-    //const float cfl = 0.9;
 
     //I.C.
     const float dt = tfinal/NSTEPS;
@@ -34,13 +30,13 @@ int main() {
     double timeInMs0 = ((double) (stop0 - start0)/CLOCKS_PER_SEC*1000.f);
     std::cout<<"Time elapsed for CPU implementation (ms): "<<timeInMs0<<std::endl; 
 
-    //cudaSetDevice(0);
-    //query device properties
-    //cudaDeviceProp prop;
-    //cudaGetDeviceProperties(&prop, 0);
-    //std::cout<<"Running on device: "<<prop.name<<std::endl;
-    //std::cout<<"Clock frequency in kilohertz: "<<prop.clockRate<<std::endl;
-    //std::cout<<"Size of global memmory available on device in MB: "<<prop.totalGlobalMem/1024.0/1024.0<<std::endl;
+    cudaSetDevice(0);
+    query device properties
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+    std::cout<<"Running on device: "<<prop.name<<std::endl;
+    std::cout<<"Clock frequency in kilohertz: "<<prop.clockRate<<std::endl;
+    std::cout<<"Size of global memmory available on device in MB: "<<prop.totalGlobalMem/1024.0/1024.0<<std::endl;
 
     //GPU implementation with global memory
     cudaEvent_t start1, stop1;
@@ -71,12 +67,6 @@ int main() {
     cudaEventElapsedTime(&timeInMs2, start2, stop2);
     std::cout<<"Time elapsed for GPU implementation with shared memory (ms): "<<timeInMs2<<std::endl;
     free(q2);
-
-    ////GPU implementation with shared memory
-    //Shallow2* q2 = (Shallow2*) malloc(m*sizeof(Shallow2));
-    //qinit(q2,m,caseNo);
-    //godunov_parallel_shared_memory(q2, x, dt, NSTEPS, dx);
-    //free(q2);
 
     free(x);
 }

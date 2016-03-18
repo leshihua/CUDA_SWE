@@ -1,11 +1,6 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-//For standard testing
-//#define MX 20000// number of cells
-//#define NSTEPS 40000
-//#define OUTPUT_FREQUENCY 40000// write output every OUTPUT_FREQUENCY steps 
-
 #define MX 100// number of cells
 #define NSTEPS 400//number of time steps
 #define OUTPUT_FREQUENCY 40// write output every OUTPUT_FREQUENCY steps 
@@ -27,8 +22,5 @@ void generateMesh(float* x, float x_lower, float x_upper);
 void godunov_serial(Shallow2 *q, const float* const x, const float dt, const int nsteps, const float dx);
 void godunov_parallel_global_memory(Shallow2 *q, const float* const x, const float dt, const int nsteps, const float dx);
 void godunov_parallel_shared_memory(Shallow2 *q, const float* const x, const float dt, const int nsteps, const float dx);
-//void apply_BC(Shallow2* q);
-
-
 
 #endif
